@@ -28,8 +28,8 @@ jobs:
       - id: leetcode_login
         name: Login to LeetCode and export cookies
         env:
-          LEETCODE_USER: ${{ secrets.LEETCODE_USER }}
-          LEETCODE_PASS: ${{ secrets.LEETCODE_PASS }}
+          LEETCODE_USER: ${{ secrets.LEETCODE_USERNAME }}
+          LEETCODE_PASS: ${{ secrets.LEETCODE_PASSWORD }}
         run: |
           # create a small Playwright login script
           cat > login.js <<'JS'
@@ -40,8 +40,8 @@ jobs:
             const page = await context.newPage();
             await page.goto('https://leetcode.com/accounts/login/', { waitUntil: 'networkidle' });
 
-            await page.fill('input[name="login"]', process.env.LEETCODE_USERNAME);
-            await page.fill('input[name="password"]', process.env.LEETCODE_PASSWORD);
+            await page.fill('input[name="login"]', process.env.LEETCODE_USER);
+            await page.fill('input[name="password"]', process.env.LEETCODE_PASS);
             await Promise.all([
               page.click('button[type="submit"]'),
               page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(()=>{})
