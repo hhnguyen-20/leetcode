@@ -11,10 +11,19 @@ if not username or not password:
 
 URL = 'https://leetcode.com/accounts/login/'
 
+# Browser-like headers to avoid bot detection
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://leetcode.com/',
+    'Connection': 'keep-alive',
+}
+
 session = requests.Session()
 
-# Get initial CSRF token
-session.get(URL)
+# Get initial CSRF token with headers
+response = session.get(URL, headers=headers)
 csrf_token = session.cookies.get('csrftoken', '')
 
 if not csrf_token:
@@ -29,11 +38,11 @@ login_data = {
     'next': '/problems'  # Optional, but helps with redirect
 }
 
-# Set Referer header (LeetCode expects it)
-headers = {'Referer': URL}
+# Add Referer and update headers for POST
+post_headers = {**headers, 'Referer': URL}
 
 # Perform login
-response = session.post(URL, data=login_data, headers=headers)
+response = session.post(URL, data=login_data, headers=post_headers)
 
 if response.status_code != 200 or 'csrftoken' not in session.cookies or 'LEETCODE_SESSION' not in session.cookies:
     print("Login failed. Check credentials or if LeetCode changed their login process.")
