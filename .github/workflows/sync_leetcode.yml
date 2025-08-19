@@ -1,4 +1,4 @@
-name: Sync Leetcode
+name: Sync LeetCode
 
 on:
   workflow_dispatch:
@@ -10,29 +10,74 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.x'
+          node-version: 18
 
-      - name: Install dependencies
-        run: pip install requests
+      - name: Install Playwright (chromium)
+        run: |
+          npm init -y
+          npm i playwright
+          # install browsers; with-deps makes it work on the runner
+          npx playwright install --with-deps chromium
 
-      - name: Login to LeetCode and get tokens
-        run: python3 login_script.py
+      - id: leetcode_login
+        name: Login to LeetCode and export cookies
         env:
-          LEETCODE_USERNAME: ${{ secrets.LEETCODE_USERNAME }}
-          LEETCODE_PASSWORD: ${{ secrets.LEETCODE_PASSWORD }}
+          LEETCODE_USER: ${{ secrets.LEETCODE_USER }}
+          LEETCODE_PASS: ${{ secrets.LEETCODE_PASS }}
+        run: |
+          # create a small Playwright login script
+          cat > login.js <<'JS'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ args: ['--no-sandbox'] });
+            const context = await browser.newContext();
+            const page = await context.newPage();
+            await page.goto('https://leetcode.com/accounts/login/', { waitUntil: 'networkidle' });
+
+            await page.fill('input[name="login"]', process.env.LEETCODE_USERNAME);
+            await page.fill('input[name="password"]', process.env.LEETCODE_PASSWORD);
+            await Promise.all([
+              page.click('button[type="submit"]'),
+              page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(()=>{})
+            ]);
+
+            const cookies = await context.cookies();
+            const session = cookies.find(c => c.name === 'LEETCODE_SESSION')?.value || '';
+            const csrf = cookies.find(c => c.name === 'csrftoken')?.value || '';
+
+            const fs = require('fs');
+            fs.writeFileSync('leetcode_cookies.txt', `LEETCODE_SESSION=${session}\nLEETCODE_CSRF_TOKEN=${csrf}`);
+            await browser.close();
+          })().catch(e => { console.error(e); process.exit(1); });
+          JS
+
+          # run the script but do not print cookie contents to logs
+          node login.js > /dev/null 2>&1
+
+          # read cookie values safely
+          LEETCODE_SESSION=$(grep '^LEETCODE_SESSION=' leetcode_cookies.txt | cut -d'=' -f2-)
+          LEETCODE_CSRF_TOKEN=$(grep '^LEETCODE_CSRF_TOKEN=' leetcode_cookies.txt | cut -d'=' -f2-)
+
+          # mask them in logs (in case something prints later)
+          echo "::add-mask::$LEETCODE_SESSION"
+          echo "::add-mask::$LEETCODE_CSRF_TOKEN"
+
+          # export step outputs for other steps
+          echo "leetcode_session=$LEETCODE_SESSION" >> $GITHUB_OUTPUT
+          echo "leetcode_csrftoken=$LEETCODE_CSRF_TOKEN" >> $GITHUB_OUTPUT
 
       - name: Sync
         uses: joshcai/leetcode-sync@v1.7
         with:
-          github-token: ${{ github.token }}
-          leetcode-csrf-token: ${{ env.LEETCODE_CSRF_TOKEN }}
-          leetcode-session: ${{ env.LEETCODE_SESSION }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          leetcode-csrf-token: ${{ steps.leetcode_login.outputs.leetcode_csrftoken }}
+          leetcode-session: ${{ steps.leetcode_login.outputs.leetcode_session }}
           destination-folder: my-folder
           verbose: true
           commit-header: "[LeetCode Sync]"
